@@ -6,21 +6,15 @@ import streamlit as st
 import tensorflow as tf
 import numpy as np
 import librosa
-from matplotlib import pyplot
-import numpy as np
 from tensorflow.image import resize
-
 import gdown
 
-# Flip the switch to use the legacy Keras version!
-os.environ["TF_USE_LEGACY_KERAS"] = "1"
-
-# --- NEW DOWNLOAD CODE ---
+# --- DOWNLOAD CODE ---
 MODEL_PATH = "Trained_model.h5"
-# This is the exact ID from the Google Drive link you shared earlier
+# This is the exact ID from your Google Drive link
 DRIVE_FILE_ID = "1hoL_DLAnycV9uoQDaFMXUFGHlv6y85ys" 
 
-@st.cache_resource # This ensures it only downloads ONCE when the app starts
+@st.cache_resource 
 def fetch_model():
     if not os.path.exists(MODEL_PATH):
         with st.spinner("Downloading AI model from Google Drive... Please wait a moment."):
@@ -31,70 +25,54 @@ def fetch_model():
 # Run the download check before you do anything else
 fetch_model()
 
-
-
-#Function
+# --- MODEL LOADING ---
 @st.cache_resource()
 def load_model():
-  model = tf.keras.models.load_model("Trained_model.h5")
-  return model
+    model = tf.keras.models.load_model(MODEL_PATH)
+    return model
 
-
-# Load and preprocess audio data
+# --- PREPROCESSING ---
 def load_and_preprocess_data(file_path, target_shape=(150, 150)):
     data = []
     audio_data, sample_rate = librosa.load(file_path, sr=None)
-    # Perform preprocessing (e.g., convert to Mel spectrogram and resize)
-    # Define the duration of each chunk and overlap
+    
     chunk_duration = 4  # seconds
     overlap_duration = 2  # seconds
                 
-    # Convert durations to samples
     chunk_samples = chunk_duration * sample_rate
     overlap_samples = overlap_duration * sample_rate
                 
-    # Calculate the number of chunks
     num_chunks = int(np.ceil((len(audio_data) - chunk_samples) / (chunk_samples - overlap_samples))) + 1
                 
-    # Iterate over each chunk
     for i in range(num_chunks):
-                    # Calculate start and end indices of the chunk
         start = i * (chunk_samples - overlap_samples)
         end = start + chunk_samples
                     
-                    # Extract the chunk of audio
         chunk = audio_data[start:end]
                     
-                    # Compute the Mel spectrogram for the chunk
         mel_spectrogram = librosa.feature.melspectrogram(y=chunk, sr=sample_rate)
-                    
-                #mel_spectrogram = librosa.feature.melspectrogram(y=audio_data, sr=sample_rate)
         mel_spectrogram = resize(np.expand_dims(mel_spectrogram, axis=-1), target_shape)
         data.append(mel_spectrogram)
     
     return np.array(data)
 
-
-
-#Tensorflow Model Prediction
+# --- PREDICTION ---
 def model_prediction(X_test):
-    model = fetch_model()
+    # FIXED: Actually load the model instead of just fetching the file!
+    model = load_model()
     y_pred = model.predict(X_test)
-    predicted_categories = np.argmax(y_pred,axis=1)
+    predicted_categories = np.argmax(y_pred, axis=1)
     unique_elements, counts = np.unique(predicted_categories, return_counts=True)
-    #print(unique_elements, counts)
     max_count = np.max(counts)
     max_elements = unique_elements[counts == max_count]
     return max_elements[0]
 
-
-
-#sidebar
+# --- UI DASHBOARD ---
 st.sidebar.title("Dashboard")
-app_mode = st.sidebar.selectbox("Select Page",["Home","About Project","Prediction"])
+app_mode = st.sidebar.selectbox("Select Page", ["Home", "About Project", "Prediction"])
 
 ## Main Page
-if(app_mode=="Home"):
+if app_mode == "Home":
     st.markdown(
     """
     <style>
@@ -108,11 +86,11 @@ if(app_mode=="Home"):
     </style>
     """,
     unsafe_allow_html=True
-)
+    )
 
     st.markdown(''' ## Welcome to the,\n
     ## Music Genre Classification System! 🎶🎧''')
-   
+    
     st.markdown("""
 **Our goal is to help in identifying music genres from audio tracks efficiently. Upload an audio file, and our system will analyze it to detect its genre. Discover the power of AI in music analysis!**
 
@@ -127,52 +105,45 @@ if(app_mode=="Home"):
 - **Fast and Efficient:** Get results quickly, enabling faster music categorization and exploration.
 
 ### Get Started
-Click on the **Genre Classification** page in the sidebar to upload an audio file and explore the magic of our Music Genre Classification System!
-
-### About Us
-Learn more about the project, our team, and our mission on the **About** page.
+Click on the **Prediction** page in the sidebar to upload an audio file and explore the magic of our Music Genre Classification System!
 """)
 
-
-
-#About Project
-elif(app_mode=="About Project"):
+# About Project
+elif app_mode == "About Project":
     st.markdown("""
                 ### About Project
-                Music. Experts have been trying for a long time to understand sound and what differenciates one song from another. How to visualize sound. What makes a tone different from another.
+                Music. Experts have been trying for a long time to understand sound and what differentiates one song from another. How to visualize sound. What makes a tone different from another.
 
                 This data hopefully can give the opportunity to do just that.
 
                 ### About Dataset
                 #### Content
-                1. **genres original** - A collection of 10 genres with 100 audio files each, all having a length of 30 seconds (the famous GTZAN dataset, the MNIST of sounds)
-                2. **List of Genres** - blues, classical, country, disco, hiphop, jazz, metal, pop, reggae, rock
-                3. **images original** - A visual representation for each audio file. One way to classify data is through neural networks. Because NNs (like CNN, what we will be using today) usually take in some sort of image representation, the audio files were converted to Mel Spectrograms to make this possible.
-                4. **2 CSV files** - Containing features of the audio files. One file has for each song (30 seconds long) a mean and variance computed over multiple features that can be extracted from an audio file. The other file has the same structure, but the songs were split before into 3 seconds audio files (this way increasing 10 times the amount of data we fuel into our classification models). With data, more is always better.
+                1. **genres original** - A collection of 10 genres with 100 audio files each, all having a length of 30 seconds.
+                2. **List of Genres** - blues, classical, country, disco, hiphop, jazz, metal, pop, reggae, rock.
+                3. **images original** - A visual representation for each audio file. Because NNs (like CNN, what we will be using today) usually take in some sort of image representation, the audio files were converted to Mel Spectrograms to make this possible.
+                4. **CSV files** - Containing features of the audio files for further analysis.
                 """)
 
-    
-
-#Prediction Page
-elif(app_mode=="Prediction"):
+# Prediction Page
+elif app_mode == "Prediction":
     st.header("Model Prediction")
-    test_mp3 = st.file_uploader("Upload an audio file", type=["mp3"])
-    if test_mp3 is not None:
-            filepath = 'Test_Music/'+test_mp3.name
-            
-
-    #Show Button
-    if(st.button("Play Audio")):
-        st.audio(test_mp3)
+    test_mp3 = st.file_uploader("Upload an audio file", type=["mp3", "wav"])
     
-    #Predict Button
-    if(st.button("Predict")):
-      with st.spinner("Please Wait.."):       
-        X_test = load_and_preprocess_data(filepath)
-        result_index = model_prediction(X_test)
-        st.balloons()
-        label = ['blues', 'classical','country','disco','hiphop','jazz','metal','pop','reggae','rock']
-        st.markdown("**:blue[Model Prediction:] It's a  :red[{}] music**".format(label[result_index]))
+    if test_mp3 is not None:
+        # FIXED: Save the uploaded file temporarily so librosa can safely read it
+        filepath = "temp_audio_file." + test_mp3.name.split('.')[-1]
+        with open(filepath, "wb") as f:
+            f.write(test_mp3.getbuffer())
 
-       
-
+        # Show Button
+        if st.button("Play Audio"):
+            st.audio(test_mp3)
+        
+        # Predict Button
+        if st.button("Predict"):
+            with st.spinner("Analyzing audio... Please Wait.."):       
+                X_test = load_and_preprocess_data(filepath)
+                result_index = model_prediction(X_test)
+                st.balloons()
+                label = ['blues', 'classical','country','disco','hiphop','jazz','metal','pop','reggae','rock']
+                st.markdown("**:blue[Model Prediction:] It's a  :red[{}] music**".format(label[result_index]))
