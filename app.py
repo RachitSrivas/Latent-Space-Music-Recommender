@@ -9,41 +9,44 @@ import os
 
 # --- CONFIGURATION ---
 MUSIC_FOLDER = "./Musicdata" 
-# Safety check: Ensure the folder exists so the app never crashes on save
 os.makedirs(MUSIC_FOLDER, exist_ok=True)
+
+# Make sure this matches the EXACT alphabetical order of your original training data
+GENRES = ['blues', 'classical', 'country', 'disco', 'hiphop', 'jazz', 'metal', 'pop', 'reggae', 'rock']
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(page_title="AI Music Recommender", page_icon="🎧", layout="centered")
 
-st.title("🎧 Latent Space Music Recommender")
+st.title("🎧 Latent Space Music Engine")
 st.markdown("""
-Upload a song, and this custom AI will map its acoustic DNA into a 1200-dimensional Latent Space. 
-If the AI hasn't heard the song before, it will dynamically learn it and expand its universe!
+Upload a track to this dual-engine AI. 
+**Brain 1** will classify its acoustic genre, and **Brain 2** will map its DNA into a 1200-dimensional Latent Space to find the closest matches in the database!
 """)
 st.divider()
 
-# --- 2. LOAD THE BRAIN AND DATABASE ---
-# We cache the AI model because it is heavy and never changes
+# --- 2. LOAD THE DUAL BRAINS AND DATABASE ---
 @st.cache_resource
-def load_ai_model():
-    return tf.keras.models.load_model('music_embedder.h5', compile=False)
+def load_ai_models():
+    # Load BOTH brains into server memory
+    classifier = tf.keras.models.load_model('Trained_model.h5', compile=False)
+    embedder = tf.keras.models.load_model('music_embedder.h5', compile=False)
+    return classifier, embedder
 
-# We do NOT cache the database because we want it to dynamically update!
 def load_database():
     if os.path.exists('music_database.pkl'):
         with open('music_database.pkl', 'rb') as f:
             return pickle.load(f)
-    return {} # Return empty if it doesn't exist yet
+    return {}
 
 try:
-    embedder = load_ai_model()
+    classifier, embedder = load_ai_models()
     database = load_database()
 except Exception as e:
-    st.error(f"Error loading AI model. Details: {e}")
+    st.error(f"Error loading AI models. Details: {e}")
     st.stop()
 
-# --- 3. THE AUDIO PROCESSOR ---
-def get_embedding(file_path):
+# --- 3. THE UNIFIED AUDIO PROCESSOR ---
+def process_and_predict(file_path):
     data = []
     audio_data, sample_rate = librosa.load(file_path, sr=None)
     
@@ -52,10 +55,8 @@ def get_embedding(file_path):
     chunk_samples = chunk_duration * sample_rate
     overlap_samples = overlap_duration * sample_rate
     
-    # Calculate how many chunks we can slice
     num_chunks = int(np.ceil((len(audio_data) - chunk_samples) / (chunk_samples - overlap_samples))) + 1
     
-    # Slice the audio and convert to Spectrograms
     for i in range(num_chunks):
         start = int(i * (chunk_samples - overlap_samples))
         end = int(start + chunk_samples)
@@ -67,11 +68,18 @@ def get_embedding(file_path):
         
     processed_chunks = np.array(data)
     
-    # Push chunks through the AI
-    chunk_embeddings = embedder.predict(processed_chunks, verbose=0)
+    # --- BRAIN 1: THE CLASSIFIER ---
+    genre_predictions = classifier.predict(processed_chunks, verbose=0)
+    average_probabilities = np.mean(genre_predictions, axis=0)
+    winning_genre_index = np.argmax(average_probabilities)
+    predicted_genre = GENRES[winning_genre_index]
+    confidence = average_probabilities[winning_genre_index] * 100
     
-    # Average the chunks into one master 1200-D coordinate
-    return np.mean(chunk_embeddings, axis=0)
+    # --- BRAIN 2: THE EMBEDDER ---
+    chunk_embeddings = embedder.predict(processed_chunks, verbose=0)
+    final_embedding = np.mean(chunk_embeddings, axis=0)
+    
+    return predicted_genre, confidence, final_embedding
 
 # --- 4. THE UI & LOGIC ---
 uploaded_file = st.file_uploader("Upload an MP3 or WAV track to analyze...", type=["mp3", "wav"])
@@ -80,56 +88,52 @@ if uploaded_file is not None:
     st.markdown("### 🎵 Uploaded Track:")
     st.audio(uploaded_file)
     
-    if st.button("🔮 Map DNA & Find Similar Songs", use_container_width=True):
-        with st.spinner("Analyzing the Latent Space..."):
+    if st.button("🔮 Analyze Track & Find Matches", use_container_width=True):
+        with st.spinner("Processing audio through Dual AI engines..."):
             
-            # Define where this file will permanently live
             permanent_path = os.path.join(MUSIC_FOLDER, uploaded_file.name)
             
             try:
-                # --- THE UPGRADE: DYNAMIC EXPANSION ---
-                if uploaded_file.name not in database:
-                    st.toast("✨ New song detected! Adding to the Latent Space...")
-                    
-                    # 1. Save the physical audio file permanently
+                # 1. Save the physical audio file permanently (if it's not already there)
+                if not os.path.exists(permanent_path):
                     with open(permanent_path, "wb") as f:
                         f.write(uploaded_file.getvalue())
-                        
-                    # 2. Calculate the 1200-D coordinate
-                    target_embedding = get_embedding(permanent_path)
-                    
-                    # 3. Update our database in memory
+                
+                # 2. Run the Unified Pipeline
+                predicted_genre, confidence, target_embedding = process_and_predict(permanent_path)
+                
+                # 3. Dynamic Expansion Logic
+                if uploaded_file.name not in database:
+                    st.toast("✨ New song detected! Adding to the Latent Space...")
                     database[uploaded_file.name] = target_embedding
-                    
-                    # 4. Overwrite the .pkl file on disk so it remembers for next time
                     with open('music_database.pkl', 'wb') as f:
                         pickle.dump(database, f)
                 else:
                     st.toast("Recognized song! Pulling from existing database...")
-                    # If we already know the song, just pull its math from the dictionary
-                    target_embedding = database[uploaded_file.name]
 
-                # --- SEARCH THE DATABASE ---
+                # 4. Search the Database
                 target_reshaped = target_embedding.reshape(1, -1)
                 recommendations = []
                 
                 for song_name, embedding in database.items():
-                    # Skip the uploaded song so it doesn't recommend itself as #1
                     if song_name == uploaded_file.name:
                         continue
-                        
                     compare_reshaped = embedding.reshape(1, -1)
                     score = cosine_similarity(target_reshaped, compare_reshaped)[0][0]
                     recommendations.append((song_name, score))
                     
-                # Sort by highest match score
                 recommendations.sort(key=lambda x: x[1], reverse=True)
                 
+                # --- PRINT RESULTS ---
                 st.divider()
                 st.success("Analysis Complete!")
+                
+                # Show Classification prominently
+                st.markdown(f"### 🎯 AI Classification: **{predicted_genre.capitalize()}** `({confidence:.1f}% confidence)`")
+                
                 st.subheader("🎧 Your Top Recommended Queue:")
                 
-                # --- PRINT THE TOP 10 AND PLAY THEM ---
+                # Print Top 10
                 for i in range(min(10, len(recommendations))):
                     song, score = recommendations[i]
                     percentage = score * 100
@@ -145,6 +149,6 @@ if uploaded_file is not None:
                             st.audio(song_path)
                         else:
                             st.warning(f"Audio file not found at {song_path}")
-                        
+                            
             except Exception as e:
                 st.error(f"Failed to process the audio file: {e}")
