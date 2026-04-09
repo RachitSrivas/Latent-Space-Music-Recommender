@@ -1,10 +1,10 @@
-tensorflow==2.15.0
-tf-keras
 streamlit
-librosa
+tensorflow<2.16.0
 numpy
+librosa
+scikit-learn
+scikit-image
 pandas
 matplotlib
 gdown
-scikit-learn
-scikit-image
+
