@@ -7,3 +7,4 @@ pandas
 matplotlib
 gdown
 scikit-learn
+scikit-image
