@@ -1,5 +1,5 @@
 # Ignore Machine Learning Models
-*.h5
+Trained_model.h5
 *.keras
 *.npz
 
