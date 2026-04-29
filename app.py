@@ -129,7 +129,7 @@ if uploaded_file is not None:
                 st.success("Analysis Complete!")
                 
                 # Show Classification prominently
-                st.markdown(f"### 🎯 AI Classification: **{predicted_genre.capitalize()}** `({confidence:.1f}% confidence)`")
+                st.markdown(f"### 🎯 AI Classification: **{predicted_genre.capitalize()}**`")
                 
                 st.subheader("🎧 Your Top Recommended Queue:")
                 
